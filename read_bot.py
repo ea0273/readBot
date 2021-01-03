@@ -1,74 +1,60 @@
 import discord
 from discord.ext import commands
-import asyncio
+
 import os
-import subprocess
-import ffmpeg
-from voice_generator import creat_WAV
 
-client = commands.Bot(command_prefix='.')
-voice_client = None
+bot = commands.Bot(command_prefix="$")
+token = os.environ['DISCORD_BOT_TOKEN']
 
+if not discord.opus.is_loaded():
+    discord.opus.load_opus("heroku-buildpack-libopus")
 
-@client.event
-async def on_ready():
-    print('Logged in as')
-    print(client.user.name)
-    print(client.user.id)
-    print('------')
-
-
-@client.command()
+@bot.command(aliases=["connect","summon"]) #connectやsummonでも呼び出せる
 async def join(ctx):
-    print('#join')
-    print('#voicechannelを取得')
-    vc = ctx.author.voice.channel
-    print('#voicechannelに接続')
-    await vc.connect()
+    """Botをボイスチャンネルに入室させます。"""
+    voice_state = ctx.author.voice
 
-@client.command()
-async def bye(ctx):
-    print('#bye')
-    print('#切断')
-    await ctx.voice_client.disconnect()
+    if (not voice_state) or (not voice_state.channel):
+        await ctx.send("先にボイスチャンネルに入っている必要があります。")
+        return
 
-@client.command()
-async def register(ctx, arg1, arg2):
-    with open('C:/open_jtalk/bin/dic.txt', mode='a') as f:
-        f.write('\n'+ arg1 + ',' + arg2)
-        print('dic.txtに書き込み：''\n'+ arg1 + ',' + arg2)
-    await ctx.send('`' + arg1+'` を `'+arg2+'` として登録しました')
+    channel = voice_state.channel
 
-@client.event
-async def on_voice_state_update(member, before, after):
-    server_id_test = "サーバーID"
-    text_id_test = "通知させたいテキストチャンネルID"
+    await channel.connect()
+    print("connected to:",channel.name)
 
 
-    if member.guild.id == server_id_test:   # サーバーid
-        text_ch = client.get_channel(text_id_test)   # 通知させたいTEXTチャンネルid
-        if before.channel is None:
-            msg = f'【VC参加ログ】{member.name} が {after.channel.name} に参加しました。'
-            await text_ch.send(msg)
+@bot.command(aliases=["disconnect","bye"])
+async def leave(ctx):
+    """Botをボイスチャンネルから切断します。"""
+    voice_client = ctx.message.guild.voice_client
 
-@client.event
-async def on_message(message):
-    print('---on_message_start---')
-    msgclient = message.guild.voice_client
-    print(msgclient)
-    if message.content.startswith('.'):
-        pass
+    if not voice_client:
+        await ctx.send("Botはこのサーバーのボイスチャンネルに参加していません。")
+        return
 
-    else:
-        if message.guild.voice_client:
-            print('#message.content:'+ message.content)
-            creat_WAV(message.content)
-            source = discord.FFmpegPCMAudio("output.wav")
-            message.guild.voice_client.play(source)
-        else:
-            pass
-    await client.process_commands(message)
-    print('---on_message_end---')
+    await voice_client.disconnect()
+    await ctx.send("ボイスチャンネルから切断しました。")
 
 
-client.run("トークン")
+@bot.command()
+async def play(ctx):
+    """指定された音声ファイルを流します。"""
+    voice_client = ctx.message.guild.voice_client
+
+    if not voice_client:
+        await ctx.send("Botはこのサーバーのボイスチャンネルに参加していません。")
+        return
+
+    if not ctx.message.attachments:
+        await ctx.send("ファイルが添付されていません。")
+        return
+
+    await ctx.message.attachments[0].save("tmp.mp3")
+
+    ffmpeg_audio_source = discord.FFmpegPCMAudio("tmp.mp3")
+    voice_client.play(ffmpeg_audio_source)
+
+    await ctx.send("再生しました。")
+
+bot.run(token)
